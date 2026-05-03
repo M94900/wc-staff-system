@@ -1,2 +1,2 @@
-# wc-staff-system
+index.html
 index.html
