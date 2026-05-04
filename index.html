@@ -217,7 +217,7 @@ body{background:var(--bg);color:var(--txt);font-family:"DM Sans",sans-serif;disp
   <div class="ni" onclick="nav('evaluate')" id="nav-evaluate"><span class="nico">📋</span>Evaluate</div>
   <div class="ni" onclick="nav('leaderboard')" id="nav-leaderboard"><span class="nico">🏆</span>Leaderboard</div>
   <div class="ni" onclick="nav('rewards')" id="nav-rewards"><span class="nico">🎁</span>Rewards</div>
-  <div class="ni" onclick="nav('archive')" id="nav-archive"><span class="nico">📦</span>Monthly Archive</div>
+  <div class="ni" onclick="nav('archive')" id="nav-archive"><span class="nico">📁</span>Monthly Archive</div>
   <div class="ni" id="nav-managers" onclick="nav('managers')" style="display:none"><span class="nico">🔑</span>Managers</div>
   <div class="ni" id="nav-settings" onclick="nav('settings')"><span class="nico">⚙️</span>Settings</div>
   <div class="user-chip">
@@ -267,7 +267,8 @@ let CLOUD={key:localStorage.getItem("wc_ck")||"",binId:localStorage.getItem("wc_
 let CU=null;
 
 async function save(){
-  const payload={brands:S.brands,employees:S.employees,evaluations:S.evaluations,rewards:S.rewards,eom:S.eom,managers:S.managers,comments:S.comments,nominations:S.nominations,monthlyArchive:S.monthlyArchive||[],settings:S.settings};
+  if(!S.eomRejections)S.eomRejections=[];
+  const payload={brands:S.brands,employees:S.employees,evaluations:S.evaluations,rewards:S.rewards,eom:S.eom,eomRejections:S.eomRejections,managers:S.managers,comments:S.comments,nominations:S.nominations,monthlyArchive:S.monthlyArchive||[],settings:S.settings};
   const p=JSON.stringify(payload);
   try{localStorage.setItem("wc2",p);}catch(e){}
   try{if(window.storage)await window.storage.set("wc2",p);}catch(e){}
@@ -390,7 +391,7 @@ async function loginCloudConnect(){
       S.brands=cd.brands||S.brands;S.employees=cd.employees||[];
       S.evaluations=cd.evaluations||[];S.rewards=cd.rewards||[];
       S.eom=cd.eom||[];S.managers=cd.managers||[];
-      S.comments=cd.comments||[];S.nominations=cd.nominations||[];
+      S.comments=cd.comments||[];S.nominations=cd.nominations||[];S.eomRejections=cd.eomRejections||[];
       S.settings=Object.assign(S.settings,cd.settings||{});
       if(!S.managers.find(m=>m.id==="admin0"))
         S.managers.unshift({id:"admin0",name:"Administrator",username:"admin",password:"admin123",role:"admin"});
@@ -481,6 +482,62 @@ function h2r(h){return parseInt(h.slice(1,3),16)+","+parseInt(h.slice(3,5),16)+"
 function dk(h){let r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);r=Math.max(0,r-60);g=Math.max(0,g-60);b=Math.max(0,b-60);return "#"+(r<16?"0":"")+r.toString(16)+(g<16?"0":"")+g.toString(16)+(b<16?"0":"")+b.toString(16);}
 
 // ── MONTHLY ARCHIVE ────────────────────────────────────────────────
+function pgArchive(){
+  const b=cB();const emps=isMgr()?S.employees.filter(e=>e.brandId===b.id&&e.branchId===CU.branchId):S.employees.filter(e=>e.brandId===b.id);
+
+  // Group rewards by month
+  const rws=S.rewards.filter(r=>emps.some(e=>e.id===r.empId));
+  const byMonth={};
+  rws.forEach(r=>{const m=r.date?r.date.slice(0,7):"Unknown";if(!byMonth[m])byMonth[m]=[];byMonth[m].push(r);});
+  const months=Object.keys(byMonth).sort().reverse();
+
+  const monthCards=months.length?months.map(m=>{
+    const mrs=byMonth[m];
+    const total=mrs.reduce((a,r)=>a+(r.amount||0),0);
+    const eomThisMonth=S.eom.find(e=>e.month===m&&e.brandId===b.id);
+    const eomEmp=eomThisMonth?emps.find(e=>e.id===eomThisMonth.empId):null;
+    const rej=(S.eomRejections||[]).find(r=>r.month===m&&r.brandId===b.id);
+    const evs=S.evaluations.filter(ev=>emps.some(e=>e.id===ev.empId)&&ev.date&&ev.date.startsWith(m));
+    const avgPts=evs.length?Math.round(evs.reduce((a,e)=>a+e.pts,0)/evs.length):0;
+    return `<div style="background:var(--surf2);border:1px solid var(--bdr);border-radius:14px;padding:18px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:600">${m}</div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div style="text-align:center"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:var(--acc)">${total}</div><div style="font-size:9px;color:var(--dim)">SAR</div></div>
+          <div style="text-align:center"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600">${mrs.length}</div><div style="font-size:9px;color:var(--dim)">Rewards</div></div>
+          <div style="text-align:center"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600">${evs.length}</div><div style="font-size:9px;color:var(--dim)">Evals</div></div>
+          <div style="text-align:center"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:${avgPts>=80?"var(--grn)":avgPts>=60?"var(--acc)":"var(--red)"}">${avgPts}</div><div style="font-size:9px;color:var(--dim)">Avg Pts</div></div>
+        </div>
+      </div>
+      ${eomEmp?`<div style="background:linear-gradient(135deg,rgba(245,200,66,.08),rgba(245,200,66,.02));border:1px solid rgba(245,200,66,.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">🏆</span>
+        <div style="flex:1">
+          <div style="font-size:12.5px;font-weight:600;color:var(--acc)">Employee of Month: ${eomEmp.name}</div>
+          ${rej?`<div style="font-size:10.5px;color:var(--dim);margin-top:2px">🔄 Override — Rejected: ${S.employees.find(e=>e.id===rej.rejectedEmpId)?.name||"System suggestion"}</div><div style="font-size:10.5px;color:rgba(255,71,87,.7)">Reason: "${rej.reason}"</div>`:
+          `<div style="font-size:10.5px;color:var(--grn);margin-top:2px">✅ System suggestion approved</div>`}
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--acc)">${eomThisMonth.amount} SAR</div>
+      </div>`:""}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        ${mrs.slice(0,6).map(r=>{const em=emps.find(e=>e.id===r.empId);const ico=r.type==="eom"?"🏆":r.type==="team"?"👥":"⚡";
+        return `<div style="display:flex;align-items:center;gap:7px;padding:7px;background:rgba(0,0,0,.15);border-radius:8px">
+          <span style="font-size:14px">${ico}</span>
+          <div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${em?.name||"—"}</div><div style="font-size:10px;color:var(--dim)">${r.reason||""}</div></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--acc);flex-shrink:0">${r.amount}SAR</div>
+        </div>`;}).join("")}
+        ${mrs.length>6?`<div style="grid-column:1/-1;text-align:center;font-size:11px;color:var(--dim);padding:6px">+${mrs.length-6} more rewards</div>`:""}
+      </div>
+    </div>`;
+  }).join(""):
+  `<div class="empty"><div class="ei">📁</div><div class="et">No archive data yet</div><div style="font-size:12px;color:var(--dim);margin-top:6px">Awards and evaluations will appear here month by month</div></div>`;
+
+  return `<div class="sh"><div class="st">📁 Monthly Archive — ${b.name}</div></div>
+    <div style="font-size:13px;color:var(--dim);margin-bottom:16px;line-height:1.8">
+      All months are saved permanently. Data is never deleted unless you manually remove it.
+    </div>
+    ${monthCards}`;
+}
+
 function openArchive(){
   const b=cB();const emps=bEmps();
   // Group rewards by month
@@ -589,6 +646,7 @@ function render(){
   else if(S.ui.page==="rewards")h=pgR();
   else if(S.ui.page==="managers")h=pgMgr();
   else if(S.ui.page==="archive")h=pgArchive();
+  else if(S.ui.page==="archive")h=pgArchive();
   else if(S.ui.page==="settings")h=pgSt();
   document.getElementById("content").innerHTML='<div class="pg">'+h+'</div>';
   if(S.ui.page==="evaluate")aeR();
@@ -609,7 +667,22 @@ function pgD(){
   const rH=evs.slice().sort((a,c)=>c.date<a.date?-1:1).slice(0,5).map(ev=>{const em=emps.find(e=>e.id===ev.empId);return`<div class="rwr"><div class="rwi">${RE[em?.role||"Team Member"]}</div><div class="rwin"><div class="rwnm">${em?.name||"—"}</div><div class="rwmt">${ev.date}</div></div><span class="chip ${cc(ev.pts)}">${ev.pts}pts</span></div>`;}).join("")||`<div class="empty" style="padding:20px"><div class="ei">📋</div><div class="et">No evaluations yet</div></div>`;
   const brC=b.branches.map((brn,i)=>{const rv=brn.googleRating||0;const hp=brn.googlePlaceUrl;return`<div class="brc"><div style="font-size:11px;font-weight:600;margin-bottom:4px">${brn.name}</div><div class="brn">${rv.toFixed(1)}</div><div class="brs">${stT(rv)}</div><div style="font-size:10px;color:var(--dim);margin-bottom:4px">Google Rating</div>${hp?`<span class="g-live">🔗 Linked</span>`:`<span class="g-manual">Manual</span>`}<div style="margin-top:5px;display:flex;gap:4px;justify-content:center">${hp?`<button class="ubt" onclick="fetchGR(${i})">🔄</button>`:""}<button class="ubt" onclick="openRatingModal(${i})">✏️ Update</button></div></div>`;}).join("");
   const nomH=noms.length?noms.map(nom=>{const em=S.employees.find(e=>e.id===nom.empId);const mgr=S.managers.find(m=>m.id===nom.managerId);return`<div class="eomi"><span style="font-size:18px">🏅</span><div style="flex:1"><div style="font-size:12px;font-weight:600">${em?.name||"—"} <span class="rb r${RK[em?.role]||"TM"}">${em?.role||""}</span></div><div style="font-size:10px;color:var(--dim)">${mgr?.name||"Manager"}: ${nom.note||""}</div></div>${isAdmin()?`<button class="btn bp bsm" onclick="openEOM('${nom.empId}')">Award 🏆</button>`:""}</div>`;}).join(""):`<div style="color:var(--dim);font-size:11px;text-align:center;padding:8px">No nominations this month</div>`;
-  const eomH=S.eom.filter(e=>e.brandId===b.id&&e.branchId===br?.id).slice().reverse().slice(0,3).map(e=>{const em=S.employees.find(x=>x.id===e.empId);return`<div class="eomi"><span style="font-size:19px">🏆</span><div style="flex:1"><div style="font-size:12px;font-weight:600">${em?.name||"—"}</div><div style="font-size:10px;color:var(--dim)">${em?.role||""} · ${e.month}</div></div><div style="font-size:11px;color:var(--acc)">${e.amount}SAR</div></div>`;}).join("")||`<div style="color:var(--dim);font-size:11px;text-align:center;padding:8px">No EOM records yet</div>`;
+  const eomH=S.eom.filter(e=>e.brandId===b.id&&e.branchId===br?.id).slice().reverse().slice(0,3).map(e=>{
+  const em=S.employees.find(x=>x.id===e.empId);
+  const rej=e.rejection||(S.eomRejections||[]).find(r=>r.month===e.month&&r.branchId===e.branchId&&r.brandId===e.brandId);
+  return`<div class="eomi">
+    <span style="font-size:19px">🏆</span>
+    <div style="flex:1">
+      <div style="font-size:12px;font-weight:600">${em?.name||"—"}</div>
+      <div style="font-size:10px;color:var(--dim)">${em?.role||""} · ${e.month}</div>
+      ${rej?`<div style="font-size:10px;color:rgba(255,71,87,.6);margin-top:2px">Override: "${rej.reason}"</div>`:""}
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:11px;color:var(--acc)">${e.amount}SAR</div>
+      ${rej?`<div style="font-size:9px;color:var(--dim)">Manual pick</div>`:`<div style="font-size:9px;color:var(--grn)">System pick</div>`}
+    </div>
+  </div>`;
+}).join("")||`<div style="color:var(--dim);font-size:11px;text-align:center;padding:8px">No EOM records yet</div>`;
   return`<div class="g4"><div class="sc"><div class="si">👥</div><div class="sv">${emps.length}</div><div class="sl">Employees</div></div><div class="sc"><div class="si">📋</div><div class="sv">${mEvs.length}</div><div class="sl">Evals This Month</div></div><div class="sc"><div class="si">📈</div><div class="sv">${avg}</div><div class="sl">Avg Score</div></div><div class="sc"><div class="si">💰</div><div class="sv">${totB}</div><div class="sl">SAR Awarded</div></div></div><div class="sh"><div class="st">Branch Google Ratings</div></div><div class="g3">${brC}</div><div class="g2"><div><div class="lbc"><div class="lbh">🏆 Top 3 — ${br?.name||""}</div>${top3H}</div><div class="eomb"><div style="font-family:'Cormorant Garamond',serif;font-size:14px;font-weight:600;margin-bottom:8px;color:var(--acc)">🏅 Nominations This Month</div>${nomH}<div class="divr"></div><div style="font-family:'Cormorant Garamond',serif;font-size:14px;font-weight:600;margin-bottom:8px;color:var(--acc)">🌟 Employee of Month</div>${eomH}</div></div><div class="card"><div class="sh" style="margin-bottom:7px"><div class="lbl">Recent Evaluations</div><button class="btn bsm bg" onclick="nav('evaluate')">+ New</button></div>${rH}</div></div>`;
 }
 
@@ -843,7 +916,98 @@ function delMgr(id){S.managers=S.managers.filter(m=>m.id!==id);save();toast("Man
 function openAR(preId){const emps=bEmps();openM(`<div class="mh"><div class="mt">⚡ Instant Reward</div><button class="xb" onclick="closeM()">✕</button></div><div class="field"><label>Employee</label><select id="rw-e">${emps.map(e=>`<option value="${e.id}"${preId===e.id?" selected":""}>${e.name} — ${e.role}</option>`).join("")}</select></div><div class="field"><label>Amount (SAR)</label><input id="rw-a" type="number" min="0" value="100"></div><div class="field"><label>Reason</label><input id="rw-r" type="text" placeholder="Outstanding moment…"></div><div class="field"><label>Type</label><select id="rw-t"><option value="instant">⚡ Instant (50–100)</option><option value="team">👥 Team (100–200)</option></select></div><div style="display:flex;gap:6px"><button class="btn bg" onclick="closeM()" style="flex:1">Cancel</button><button class="btn bp" onclick="submitRW()" style="flex:1">Award ⚡</button></div>`);}
 function submitRW(){const empId=document.getElementById("rw-e").value;const amt=parseFloat(document.getElementById("rw-a").value)||0;const rsn=document.getElementById("rw-r").value.trim()||"Instant reward";const type=document.getElementById("rw-t").value;if(!empId){toast("Select employee","err");return;}if(amt<=0){toast("Enter amount","err");return;}S.rewards.push({id:uid(),empId,amount:amt,reason:rsn,type,date:new Date().toISOString().split("T")[0]});const emp=S.employees.find(e=>e.id===empId);if(emp)emp.totalBonus=(emp.totalBonus||0)+amt;save();closeM();toast("✓ "+amt+" SAR awarded!","ok");render();}
 
-function openEOM(preId){const emps=bEmps();openM(`<div class="mh"><div class="mt">🏆 Employee of the Month</div><button class="xb" onclick="closeM()">✕</button></div><div style="background:linear-gradient(135deg,rgba(245,200,66,.1),rgba(245,200,66,.02));border:1px solid rgba(245,200,66,.2);border-radius:7px;padding:10px;margin-bottom:12px;font-size:11.5px;color:var(--dim)">🌟 EOM: <span style="color:var(--acc)">200–500 SAR + Certificate + Honor Board</span></div><div class="field"><label>Employee</label><select id="eom-e">${emps.map(e=>`<option value="${e.id}"${preId===e.id?" selected":""}>${e.name} — ${e.role}</option>`).join("")}</select></div><div class="field"><label>Month</label><input id="eom-m" type="month" value="${tM()}"></div><div class="field"><label>Amount (SAR)</label><input id="eom-a" type="number" min="200" max="500" value="300"></div><div style="display:flex;gap:6px"><button class="btn bg" onclick="closeM()" style="flex:1">Cancel</button><button class="btn bp" onclick="submitEOM()" style="flex:1">Award 🏆</button></div>`);}
+function openEOM(preId){
+  const emps=bEmps().sort((a,c)=>c.totalPts-a.totalPts);
+  const b=cB();const br=cbr();const month=tM();
+  // System suggestion: highest points this month
+  const monthEvs=S.evaluations.filter(ev=>emps.some(e=>e.id===ev.empId)&&ev.date&&ev.date.startsWith(month));
+  let suggested=null;
+  if(monthEvs.length){
+    const ptsByEmp={};
+    monthEvs.forEach(ev=>{ptsByEmp[ev.empId]=(ptsByEmp[ev.empId]||0)+ev.pts;});
+    const top=Object.entries(ptsByEmp).sort((a,c)=>c[1]-a[1])[0];
+    if(top)suggested=emps.find(e=>e.id===top[0]);
+  }
+  if(!suggested&&emps.length)suggested=emps[0];
+  const sugId=preId||suggested?.id||"";
+  openM(`<div class="mh"><div class="mt">🏆 Employee of the Month</div><button class="xb" onclick="closeM()">✕</button></div>
+    <div style="background:linear-gradient(135deg,rgba(245,200,66,.1),rgba(245,200,66,.02));border:1px solid rgba(245,200,66,.22);border-radius:10px;padding:14px;margin-bottom:14px">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">🤖 System Suggestion — ${month}</div>
+      ${suggested?`
+      <div style="display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.2);border-radius:8px;padding:10px;margin-bottom:10px">
+        <span style="font-size:24px">${RE[suggested.role]}</span>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:600;color:var(--cream)">${suggested.name}</div>
+          <div style="font-size:11px;color:var(--dim)">${suggested.role} · ${suggested.totalPts} total pts</div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--acc);font-weight:600">#1</span>
+      </div>
+      <div style="display:flex;gap:7px">
+        <button class="btn bp" onclick="approveEOM('${suggested.id}')" style="flex:1">✅ Approve</button>
+        <button class="btn bd" onclick="showRejectEOM('${suggested.id}')" style="flex:1">❌ Reject & Choose</button>
+      </div>`:`<div style="color:var(--dim);font-size:12px;text-align:center;padding:8px">No evaluations this month — choose manually below</div>`}
+    </div>
+    <div id="eom-reject-panel" style="display:${suggested?'none':'block'}">
+      <div class="field"><label>Reason for Rejection</label>
+        <textarea id="eom-reject-reason" rows="2" placeholder="e.g. Absence, behavior, choosing based on overall impact…"></textarea>
+      </div>
+      <div class="field"><label>Choose Employee</label>
+        <select id="eom-e">${emps.map(e=>`<option value="${e.id}">${e.name} — ${e.role} (${e.totalPts}pts)</option>`).join("")}</select>
+      </div>
+      <div class="field"><label>Month</label><input id="eom-m" type="month" value="${month}"></div>
+      <div class="field"><label>Amount (SAR)</label><input id="eom-a" type="number" min="200" max="500" value="300"></div>
+      <div style="display:flex;gap:7px">
+        <button class="btn bg" onclick="closeM()" style="flex:1">Cancel</button>
+        <button class="btn bp" onclick="submitEOMManual('${suggested?.id||""}')" style="flex:1">Award 🏆</button>
+      </div>
+    </div>`);
+}
+function approveEOM(empId){
+  const emps=bEmps();const emp=emps.find(e=>e.id===empId);
+  openM(`<div class="mh"><div class="mt">✅ Confirm Award</div><button class="xb" onclick="closeM()">✕</button></div>
+    <div style="text-align:center;padding:10px 0 16px">
+      <div style="font-size:40px;margin-bottom:8px">🏆</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:600;color:var(--acc);margin-bottom:4px">${emp?.name||"—"}</div>
+      <div style="font-size:12px;color:var(--dim)">Employee of the Month — ${tM()}</div>
+      <div style="font-size:11px;color:var(--grn);margin-top:6px">✅ System suggestion approved</div>
+    </div>
+    <div class="field"><label>Amount (SAR)</label><input id="eom-a-confirm" type="number" min="200" max="500" value="300"></div>
+    <div style="display:flex;gap:7px">
+      <button class="btn bg" onclick="openEOM()" style="flex:1">← Back</button>
+      <button class="btn bp" onclick="submitEOMConfirm('${empId}',null,null,null)" style="flex:1">Confirm 🏆</button>
+    </div>`);
+}
+function showRejectEOM(sugId){
+  const panel=document.getElementById("eom-reject-panel");
+  if(panel){panel.style.display="block";panel.scrollIntoView({behavior:"smooth"});}
+}
+function submitEOMManual(rejectedId){
+  const empId=document.getElementById("eom-e")?.value;
+  const reason=document.getElementById("eom-reject-reason")?.value.trim();
+  const month=document.getElementById("eom-m")?.value||tM();
+  const amt=parseFloat(document.getElementById("eom-a")?.value)||300;
+  if(!empId){toast("Select an employee","err");return;}
+  if(rejectedId&&!reason){toast("Please enter a rejection reason","err");return;}
+  submitEOMConfirm(empId,rejectedId?{rejectedId,reason}:null,month,amt);
+}
+function submitEOMConfirm(empId,rejection,month,amt){
+  month=month||tM();
+  amt=amt||parseFloat(document.getElementById("eom-a-confirm")?.value)||300;
+  const b=cB();const br=cbr();
+  const eomEntry={id:uid(),empId,brandId:b.id,branchId:br?.id,month,amount:amt,
+    date:new Date().toISOString().split("T")[0],rejection:rejection||null};
+  S.eom.push(eomEntry);
+  S.rewards.push({id:uid(),empId,amount:amt,reason:"Employee of the Month — "+month,type:"eom",date:eomEntry.date});
+  const emp=S.employees.find(e=>e.id===empId);
+  if(emp){emp.totalBonus=(emp.totalBonus||0)+amt;calcBdg(emp);}
+  if(rejection&&rejection.rejectedId){
+    if(!S.eomRejections)S.eomRejections=[];
+    S.eomRejections.push({id:uid(),brandId:b.id,branchId:br?.id,month,
+      rejectedEmpId:rejection.rejectedId,chosenEmpId:empId,reason:rejection.reason,
+      date:eomEntry.date});
+  }
+  save();closeM();toast("🏆 EOM awarded to "+(emp?.name||"")+"!","ok");render();
+}
 function submitEOM(){const empId=document.getElementById("eom-e").value;const month=document.getElementById("eom-m").value;const amt=parseFloat(document.getElementById("eom-a").value)||300;if(!empId){toast("Select employee","err");return;}const b=cB();const br=cbr();S.eom.push({id:uid(),empId,brandId:b.id,branchId:br?.id,month,amount:amt,date:new Date().toISOString().split("T")[0]});S.rewards.push({id:uid(),empId,amount:amt,reason:"Employee of the Month — "+month,type:"eom",date:new Date().toISOString().split("T")[0]});const emp=S.employees.find(e=>e.id===empId);if(emp){emp.totalBonus=(emp.totalBonus||0)+amt;calcBdg(emp);}save();closeM();toast("🏆 EOM awarded!","ok");render();}
 
 function openRatingModal(brIdx){const b=cB();const idx=brIdx!==undefined?brIdx:S.ui.branch;const br=b.branches[idx];if(!br)return;openM(`<div class="mh"><div class="mt">Update Google Rating</div><button class="xb" onclick="closeM()">✕</button></div><div style="font-size:11.5px;color:var(--dim);margin-bottom:11px">${b.name} · <strong style="color:var(--txt)">${br.name}</strong></div><div class="field"><label>Rating (1.0–5.0)</label><input id="gr-v" type="number" min="1" max="5" step="0.1" value="${br.googleRating}"></div><div style="background:var(--surf2);border-radius:7px;padding:9px;font-size:11px;color:var(--dim);margin-bottom:11px">💡 Google Maps → search restaurant → copy star rating.</div><div style="display:flex;gap:6px"><button class="btn bg" onclick="closeM()" style="flex:1">Cancel</button><button class="btn bp" onclick="submitGRat(${idx})" style="flex:1">Update</button></div>`);}
